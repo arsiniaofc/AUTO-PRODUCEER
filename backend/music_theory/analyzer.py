@@ -75,12 +75,19 @@ class HarmonicAnalyzer:
 
     @staticmethod
     def calculate_pitch_class_distribution(notes: List[Dict[str, Any]]) -> List[float]:
-        """Calculates duration-weighted or count-weighted 12-dimensional pitch class histogram."""
+        """Calculates duration-weighted or count-weighted 12-dimensional pitch class histogram.
+        Ignores drum/percussion channel 9 notes to preserve harmonic accuracy.
+        """
         distribution = [0.0] * 12
         if not notes:
             return distribution
 
-        for n in notes:
+        pitched_notes = [n for n in notes if not n.get("is_drum") and n.get("channel") != 9]
+        if not pitched_notes:
+            # If ONLY drum notes exist, allow them as fallback with lower confidence
+            pitched_notes = notes
+
+        for n in pitched_notes:
             pitch = n.get("pitch", 60) % 12
             duration = max(0.1, n.get("duration", 0.5))
             velocity = n.get("velocity", 80) / 127.0
@@ -95,6 +102,13 @@ class HarmonicAnalyzer:
     @classmethod
     def estimate_key(cls, notes: List[Dict[str, Any]]) -> KeyEstimate:
         """Krumhansl-Schmuckler Key-Finding Algorithm based on pitch class correlation."""
+        if not notes:
+            return KeyEstimate(root="C", mode="major", confidence=0.0, correlations={})
+
+        has_pitched = any(not n.get("is_drum") and n.get("channel") != 9 for n in notes)
+        if not has_pitched:
+            return KeyEstimate(root="Percussão", mode="rítmico", confidence=0.95, correlations={})
+
         hist = cls.calculate_pitch_class_distribution(notes)
         if sum(hist) == 0:
             return KeyEstimate(root="C", mode="major", confidence=0.0, correlations={})

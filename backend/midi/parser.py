@@ -65,21 +65,22 @@ class MidiParser:
 
     @classmethod
     def parse_file(cls, filepath: str) -> MidiSong:
-        """Parses a .mid file into MidiSong structure."""
+        """Parses a .mid file into MidiSong structure with full track/channel separation."""
         with open(filepath, "rb") as f:
             data = f.read()
 
         if len(data) < 14 or data[:4] != b"MThd":
             raise ValueError(f"Arquivo não é um MIDI válido: cabeçalho MThd ausente em {filepath}")
 
-        # Header chunk: 4 bytes length (usually 6), format (2), tracks (2), division (2)
-        _, num_tracks, division = struct.unpack(">HHH", data[8:14])
+        # Header chunk: 4 bytes length, format (2), tracks (2), division (2)
+        _, smf_format, num_tracks, division = struct.unpack(">IHHH", data[4:14])
         ticks_per_beat = division if division > 0 else 480
 
         offset = 14
         tracks: List[MidiTrack] = []
         tempo_bpm = 120.0
-        us_per_beat = 500000  # 120 BPM default
+        time_sig = "4/4"
+        channel_programs: Dict[int, int] = {}
 
         for track_idx in range(num_tracks):
             if offset + 8 > len(data):
@@ -98,11 +99,12 @@ class MidiParser:
             trk_offset = 0
             current_tick = 0
             running_status = 0
-            active_notes: Dict[Tuple[int, int], Tuple[int, int]] = {}  # (channel, pitch) -> (start_tick, velocity)
-            track_notes: List[MidiNote] = []
+            # Track notes separated by channel: channel -> list of MidiNote
+            channel_notes: Dict[int, List[MidiNote]] = {}
+            # Active notes: (channel, pitch) -> list of (start_tick, velocity) to support polyphony
+            active_notes: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
             track_name = f"Track {track_idx + 1}"
-            channel = 0
-            program = 0
+            track_program = 0
 
             while trk_offset < len(track_data):
                 delta, trk_offset = cls._read_vlq(track_data, trk_offset)
@@ -115,12 +117,18 @@ class MidiParser:
                     running_status = status
                     trk_offset += 1
                 else:
+                    if running_status == 0:
+                        trk_offset += 1
+                        continue
                     status = running_status
 
                 msg_type = status & 0xF0
                 msg_channel = status & 0x0F
 
                 if status == 0xFF:  # Meta event
+                    running_status = 0  # Meta cancels running status
+                    if trk_offset >= len(track_data):
+                        break
                     meta_type = track_data[trk_offset]
                     trk_offset += 1
                     meta_len, trk_offset = cls._read_vlq(track_data, trk_offset)
@@ -129,78 +137,128 @@ class MidiParser:
 
                     if meta_type == 0x03:  # Track name
                         try:
-                            track_name = meta_payload.decode("utf-8", errors="ignore").strip()
+                            decoded_name = meta_payload.decode("utf-8", errors="ignore").strip()
+                            if decoded_name:
+                                track_name = decoded_name
                         except Exception:
                             pass
                     elif meta_type == 0x51 and meta_len == 3:  # Set tempo
                         us_per_beat = struct.unpack(">I", b"\x00" + meta_payload)[0]
                         if us_per_beat > 0:
                             tempo_bpm = round(60000000.0 / us_per_beat, 2)
+                    elif meta_type == 0x58 and meta_len >= 2:  # Time signature
+                        num = meta_payload[0]
+                        den = 2 ** meta_payload[1]
+                        time_sig = f"{num}/{den}"
                     elif meta_type == 0x2F:  # End of track
                         break
 
                 elif status in (0xF0, 0xF7):  # SysEx
+                    running_status = 0
                     sysex_len, trk_offset = cls._read_vlq(track_data, trk_offset)
                     trk_offset += sysex_len
 
                 elif msg_type == 0x90:  # Note On
+                    if trk_offset + 1 >= len(track_data):
+                        break
                     pitch = track_data[trk_offset]
                     vel = track_data[trk_offset + 1]
                     trk_offset += 2
-                    channel = msg_channel
                     key = (msg_channel, pitch)
+
                     if vel > 0:
-                        active_notes[key] = (current_tick, vel)
+                        if key not in active_notes:
+                            active_notes[key] = []
+                        active_notes[key].append((current_tick, vel))
                     else:
                         # Velocity 0 is Note Off
-                        if key in active_notes:
-                            start_t, v = active_notes.pop(key)
-                            dur_beats = (current_tick - start_t) / ticks_per_beat
+                        if key in active_notes and active_notes[key]:
+                            start_t, v = active_notes[key].pop(0)
+                            dur_beats = max(0.1, (current_tick - start_t) / ticks_per_beat)
                             start_beats = start_t / ticks_per_beat
-                            track_notes.append(MidiNote(pitch=pitch, start=start_beats, duration=dur_beats, velocity=v, channel=channel))
+                            if msg_channel not in channel_notes:
+                                channel_notes[msg_channel] = []
+                            channel_notes[msg_channel].append(MidiNote(
+                                pitch=pitch, start=start_beats, duration=dur_beats, velocity=v, channel=msg_channel
+                            ))
 
                 elif msg_type == 0x80:  # Note Off
+                    if trk_offset + 1 >= len(track_data):
+                        break
                     pitch = track_data[trk_offset]
                     vel = track_data[trk_offset + 1]
                     trk_offset += 2
-                    channel = msg_channel
                     key = (msg_channel, pitch)
-                    if key in active_notes:
-                        start_t, v = active_notes.pop(key)
-                        dur_beats = (current_tick - start_t) / ticks_per_beat
+                    if key in active_notes and active_notes[key]:
+                        start_t, v = active_notes[key].pop(0)
+                        dur_beats = max(0.1, (current_tick - start_t) / ticks_per_beat)
                         start_beats = start_t / ticks_per_beat
-                        track_notes.append(MidiNote(pitch=pitch, start=start_beats, duration=dur_beats, velocity=v, channel=channel))
+                        if msg_channel not in channel_notes:
+                            channel_notes[msg_channel] = []
+                        channel_notes[msg_channel].append(MidiNote(
+                            pitch=pitch, start=start_beats, duration=dur_beats, velocity=v, channel=msg_channel
+                        ))
 
                 elif msg_type == 0xC0:  # Program Change
-                    program = track_data[trk_offset]
-                    trk_offset += 1
+                    if trk_offset < len(track_data):
+                        prog = track_data[trk_offset]
+                        trk_offset += 1
+                        channel_programs[msg_channel] = prog
+                        track_program = prog
 
                 elif msg_type in (0xA0, 0xB0, 0xE0):
                     trk_offset += 2
                 elif msg_type == 0xD0:
                     trk_offset += 1
 
-            if track_notes or (track_name and track_name != f"Track {track_idx + 1}"):
-                is_drum = channel == 9
+            # Close any unclosed notes at end of track
+            for (ch, pitch), note_list in active_notes.items():
+                for start_t, v in note_list:
+                    dur_beats = max(0.25, (current_tick - start_t) / ticks_per_beat)
+                    start_beats = start_t / ticks_per_beat
+                    if ch not in channel_notes:
+                        channel_notes[ch] = []
+                    channel_notes[ch].append(MidiNote(
+                        pitch=pitch, start=start_beats, duration=dur_beats, velocity=v, channel=ch
+                    ))
+
+            # If format 0 or multi-channel track, split into tracks per channel
+            if len(channel_notes) > 1:
+                for ch, c_notes in sorted(channel_notes.items()):
+                    is_drum = ch == 9
+                    c_name = f"{track_name} (Ch {ch + 1})" if not is_drum else "Drums (Ch 10)"
+                    tracks.append(MidiTrack(
+                        name=c_name,
+                        channel=ch,
+                        program=channel_programs.get(ch, track_program),
+                        is_drum=is_drum,
+                        notes=sorted(c_notes, key=lambda n: n.start)
+                    ))
+            elif len(channel_notes) == 1:
+                ch, c_notes = list(channel_notes.items())[0]
+                is_drum = ch == 9
                 tracks.append(MidiTrack(
                     name=track_name,
-                    channel=channel,
-                    program=program,
+                    channel=ch,
+                    program=channel_programs.get(ch, track_program),
                     is_drum=is_drum,
-                    notes=sorted(track_notes, key=lambda n: n.start)
+                    notes=sorted(c_notes, key=lambda n: n.start)
                 ))
+            elif track_name and track_name != f"Track {track_idx + 1}":
+                tracks.append(MidiTrack(name=track_name, notes=[]))
 
         # Calculate duration in seconds
         max_beats = 0.0
         for t in tracks:
             for n in t.notes:
                 max_beats = max(max_beats, n.start + n.duration)
-        sec_per_beat = 60.0 / tempo_bpm
+        sec_per_beat = 60.0 / max(20.0, tempo_bpm)
         duration_sec = round(max_beats * sec_per_beat, 2)
 
         return MidiSong(
             ticks_per_beat=ticks_per_beat,
             bpm=tempo_bpm,
+            time_signature=time_sig,
             tracks=tracks,
             duration_sec=duration_sec
         )

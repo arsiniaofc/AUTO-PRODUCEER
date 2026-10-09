@@ -221,13 +221,14 @@ class MusicGenerator:
         midi_path = os.path.join(GENERATED_DIR, filename)
         MidiParser.write_file(song, midi_path)
 
-        # Also write native FL Studio project file (.flp)
+        # Also write native FL Studio project file (.flp) with all note events
         flp_filename = filename.replace(".mid", ".flp")
         flp_path = os.path.join(GENERATED_DIR, flp_filename)
         FlpParser.write_flp_file(
             filepath=flp_path,
             title=title,
             bpm=bpm,
+            tracks=song.tracks,
             channel_names=[t.name for t in song.tracks]
         )
 
