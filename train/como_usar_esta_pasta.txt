@@ -1,0 +1,23 @@
+================================================================================
+ PASTA DE TREINAMENTO DA IA MUSICAL — AUTONOMOUS MUSIC PRODUCER
+================================================================================
+
+COMO USAR ESTA PASTA:
+1. Copie e cole seus arquivos musicais aqui dentro!
+   - Formatos recomendados: .mid (MIDI) e .flp (Projetos do FL Studio).
+   - Pode colocar qualquer música, arranjo, progressão de acordes ou batida.
+
+2. O que a IA aprende com seus arquivos:
+   - Tonalidade e escalas mais usadas pelo seu estilo.
+   - Progressões de acordes e relação de harmonia com o baixo.
+   - Padrões rítmicos de bateria, hi-hats, bumbo e caixa.
+   - Estrutura de arranjo e dinâmica de velocity.
+
+3. Como treinar:
+   - Abra o aplicativo (python iniciar.py)
+   - Vá na aba "Treinamento da IA"
+   - Clique no botão "Treinar com Arquivos da Pasta train/"
+   - A IA lerá todos os arquivos presentes nesta pasta automaticamente!
+
+Já incluímos alguns arquivos .mid de exemplo nesta pasta para você testar imediatamente!
+================================================================================

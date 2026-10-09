@@ -49,6 +49,7 @@ python iniciar.py
 ## 3. Estrutura do Projeto
 
 ```
+├── train/                   # PASTA DE TREINO: Coloque seus arquivos .mid e .flp aqui!
 ├── iniciar.py               # Ponto de entrada com diagnóstico e auto-abertura de navegador
 ├── server.py                # Servidor local HTTP e API REST
 ├── requirements.txt         # Dependências Python (PyTorch CPU, PyFLP, Mido, SQLite, etc.)
@@ -72,7 +73,18 @@ python iniciar.py
 
 ---
 
-## 4. Testes Automatizados
+## 4. Como Treinar a IA com suas Próprias Músicas (Pasta `train/`)
+
+1. Abra a pasta `train/` na raiz do projeto.
+2. Copie e cole seus arquivos `.mid` (MIDI) ou `.flp` (projetos FL Studio) lá dentro.
+3. Inicie o aplicativo executando `python iniciar.py` (ou `iniciar_windows.bat`).
+4. Na interface, vá na aba **Treinamento da IA**.
+5. Clique no botão verde: **"Treinar Modelo com Pasta 'train/'"**.
+6. A IA lerá seus arquivos, extrairá a tonalidade, acordes, ritmo e andamento, e treinará o modelo localmente na sua CPU!
+
+---
+
+## 5. Testes Automatizados
 
 Para rodar a verificação de integridade dos módulos Python:
 

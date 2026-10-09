@@ -7,7 +7,8 @@ import time
 import threading
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
-from backend.storage.db import get_db_connection, log_action
+from backend.storage.db import get_db_connection, log_action, add_or_update_file
+from backend.music_theory.analyzer import HarmonicAnalyzer
 from backend.midi.parser import MidiParser
 from backend.midi.tokenizer import MidiTokenizer
 from backend.model.transformer import MusicTransformerLM, ModelConfig, HAS_TORCH
@@ -100,16 +101,54 @@ class ContinuousTrainer:
         log_action("Cancelamento de treino", "Treinamento interrompido", "IA", "Cancelado com sucesso", "success")
 
     def _prepare_dataset(self) -> List[List[int]]:
-        """Collects all processed MIDI/FLP files from SQLite and tokenizes them."""
+        """Collects all MIDI/FLP files from the 'train/' folder and SQLite, tokenizing them for training."""
+        train_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "train")
+        os.makedirs(train_dir, exist_ok=True)
+
+        # 1. Scan train/ folder directly
+        scanned_paths = []
+        if os.path.exists(train_dir):
+            for fname in os.listdir(train_dir):
+                fpath = os.path.join(train_dir, fname)
+                ext = os.path.splitext(fname)[1].lower()
+                if ext in [".mid", ".midi"] and os.path.isfile(fpath):
+                    scanned_paths.append(fpath)
+                    try:
+                        song = MidiParser.parse_file(fpath)
+                        all_notes = [{"pitch": n.pitch, "start": n.start, "duration": n.duration, "velocity": n.velocity} for t in song.tracks for n in t.notes]
+                        key_est = HarmonicAnalyzer.estimate_key(all_notes)
+                        add_or_update_file({
+                            "file_path": fpath,
+                            "file_name": fname,
+                            "file_type": "MIDI",
+                            "file_size": os.path.getsize(fpath),
+                            "status": "processed",
+                            "duration_sec": song.duration_sec,
+                            "bpm": song.bpm,
+                            "key_signature": f"{key_est.root} {key_est.mode.capitalize()}",
+                            "time_signature": song.time_signature,
+                            "track_count": len(song.tracks),
+                            "note_count": song.total_notes,
+                            "channels": [{"name": t.name, "notes": len(t.notes), "is_drum": t.is_drum} for t in song.tracks],
+                            "is_trained": 1
+                        })
+                    except Exception:
+                        pass
+
+        # 2. Collect from SQLite
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT file_path FROM files WHERE status='processed'")
         rows = cursor.fetchall()
         conn.close()
 
-        new_sequences = []
         for r in rows:
-            path = r["file_path"]
+            p = r["file_path"]
+            if p not in scanned_paths and os.path.exists(p):
+                scanned_paths.append(p)
+
+        new_sequences = []
+        for path in scanned_paths:
             if os.path.exists(path) and path.lower().endswith((".mid", ".midi")):
                 try:
                     song = MidiParser.parse_file(path)

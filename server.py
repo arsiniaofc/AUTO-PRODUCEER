@@ -31,7 +31,12 @@ from backend.fl_studio.fl_midi_script import generate_fl_midi_script
 from backend.fl_studio.automation import FLStudioUIAutomation
 from backend.memory.state import MusicalMemory, DAWStateMemory
 
+DIST_DIR = os.path.join(ROOT_DIR, "dist")
 FRONTEND_DIR = os.path.join(ROOT_DIR, "frontend")
+TRAIN_DIR = os.path.join(ROOT_DIR, "train")
+
+# Serve dist (built UI) if present, otherwise fallback to frontend
+SERVE_DIR = DIST_DIR if os.path.exists(os.path.join(DIST_DIR, "index.html")) else FRONTEND_DIR
 
 # Global engine instances
 trainer = ContinuousTrainer()
@@ -41,11 +46,72 @@ musical_memory = MusicalMemory()
 daw_memory = DAWStateMemory()
 
 
+def scan_train_folder() -> list:
+    """Scans the train/ folder, parsing any .mid or .flp files found and saving them to the library DB."""
+    os.makedirs(TRAIN_DIR, exist_ok=True)
+    scanned_files = []
+    for fname in os.listdir(TRAIN_DIR):
+        fpath = os.path.join(TRAIN_DIR, fname)
+        if not os.path.isfile(fpath):
+            continue
+        ext = os.path.splitext(fname)[1].lower()
+
+        if ext in [".mid", ".midi"]:
+            try:
+                song = MidiParser.parse_file(fpath)
+                all_notes = [{"pitch": n.pitch, "start": n.start, "duration": n.duration, "velocity": n.velocity} for t in song.tracks for n in t.notes]
+                key_est = HarmonicAnalyzer.estimate_key(all_notes)
+                file_info = {
+                    "file_path": fpath,
+                    "file_name": fname,
+                    "file_type": "MIDI",
+                    "file_size": os.path.getsize(fpath),
+                    "status": "processed",
+                    "duration_sec": song.duration_sec,
+                    "bpm": song.bpm,
+                    "key_signature": f"{key_est.root} {key_est.mode.capitalize()}",
+                    "time_signature": song.time_signature,
+                    "track_count": len(song.tracks),
+                    "note_count": song.total_notes,
+                    "channels": [{"name": t.name, "notes": len(t.notes), "is_drum": t.is_drum} for t in song.tracks],
+                    "is_trained": 0
+                }
+                add_or_update_file(file_info)
+                scanned_files.append(file_info)
+            except Exception as e:
+                print(f"[Aviso] Erro ao ler MIDI {fname}: {e}")
+
+        elif ext == ".flp":
+            try:
+                flp_proj = FlpParser.parse_file(fpath)
+                file_info = {
+                    "file_path": fpath,
+                    "file_name": fname,
+                    "file_type": "FLP",
+                    "file_size": os.path.getsize(fpath),
+                    "status": "processed",
+                    "duration_sec": 60.0,
+                    "bpm": flp_proj.bpm,
+                    "key_signature": "Inferido do arranjo",
+                    "time_signature": "4/4",
+                    "track_count": len(flp_proj.channels),
+                    "note_count": sum(p.notes_count for p in flp_proj.patterns),
+                    "channels": [{"name": c.name, "plugin": c.plugin_name} for c in flp_proj.channels],
+                    "is_trained": 0
+                }
+                add_or_update_file(file_info)
+                scanned_files.append(file_info)
+            except Exception as e:
+                print(f"[Aviso] Erro ao ler FLP {fname}: {e}")
+
+    return scanned_files
+
+
 class ProducerRequestHandler(SimpleHTTPRequestHandler):
     """Handles REST API requests and serves static frontend assets."""
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=FRONTEND_DIR, **kwargs)
+        super().__init__(*args, directory=SERVE_DIR, **kwargs)
 
     def _set_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -211,6 +277,10 @@ class ProducerRequestHandler(SimpleHTTPRequestHandler):
                 "fl_studio_window": win_name or "Nenhuma janela ativa do FL Studio no momento"
             })
 
+        elif path == "/api/library/scan_train":
+            scanned = scan_train_folder()
+            self._send_json({"status": "success", "scanned_count": len(scanned), "files": list_files()})
+
         elif path == "/api/bridge/download_script":
             script_path = generate_fl_midi_script()
             with open(script_path, "r", encoding="utf-8") as f:
@@ -360,6 +430,10 @@ class ProducerRequestHandler(SimpleHTTPRequestHandler):
 
 def run_server(port: int = 8000):
     init_db()
+    # Auto-scan train folder on startup
+    initial_files = scan_train_folder()
+    print(f"[Biblioteca] Pasta 'train/' escaneada: {len(initial_files)} arquivos processados para treino.")
+
     server_address = ("127.0.0.1", port)
 
     try:

@@ -60,7 +60,7 @@ def main():
     check_system_diagnostics()
 
     # Create local directories
-    for folder in ["data", "data/generated", "data/processed", "models", "logs", "frontend"]:
+    for folder in ["train", "data", "data/generated", "data/processed", "models", "logs", "frontend"]:
         os.makedirs(os.path.join(ROOT_DIR, folder), exist_ok=True)
 
     target_port = 8000
