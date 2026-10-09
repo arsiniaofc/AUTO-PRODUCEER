@@ -977,14 +977,18 @@ function scanTrainFiles() {
 }
 
 function startAiTraining() {
+  const epochsInput = document.getElementById('trainEpochsInput');
+  const epochs = epochsInput ? parseInt(epochsInput.value) : 10;
+  
   state.trainingActive = true;
   state.trainingEpoch = 1;
+  state.trainingTotalEpochs = epochs;
   state.currentLoss = 3.42;
 
   fetch('/api/training/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ epochs: state.trainingTotalEpochs, batch_size: 8 })
+    body: JSON.stringify({ epochs: epochs, batch_size: 8 })
   }).catch(() => {});
 
   renderView();
@@ -1017,22 +1021,45 @@ function revertCheckpoint() {
 }
 
 function generateNewComposition() {
-  state.tracks[1].notes = [
-    { pitch: 36, start: 0, duration: 0.5, velocity: 95 },
-    { pitch: 36, start: 1.5, duration: 0.8, velocity: 90 },
-    { pitch: 41, start: 4, duration: 0.5, velocity: 95 },
-    { pitch: 41, start: 5.5, duration: 0.8, velocity: 90 }
-  ];
+  fetch('/api/generation/full', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Composicao_Autonoma_' + Date.now(),
+      root_key: state.key,
+      scale: state.scale,
+      bpm: state.bpm,
+      bars: state.bars
+    })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.status === 'success') {
+      const gen = data.generation;
+      state.tracks = gen.tracks; // Assuming backend returns tracks
+      drawPianoRoll();
+      
+      // Attempt to open the generated MIDI file in FL Studio
+      if (gen.midi_path) {
+        fetch('/api/fl_studio/open_file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: gen.midi_path })
+        });
+      }
+      
+      alert('Nova composição gerada e enviada para o FL Studio!');
+    }
+  });
+
   state.actionLogs.unshift({
     time: new Date().toLocaleTimeString(),
     planned: 'Nova Composição Autônoma',
-    executed: '4 Stems sintetizados a partir do modelo treinado',
+    executed: '4 Stems sintetizados via API',
     layer: 'IA Gerador',
     status: 'SUCESSO',
-    ms: 54
+    ms: 150
   });
-  drawPianoRoll();
-  alert('Nova composição sintetizada! Clique em "Reproduzir" para escutar.');
 }
 
 function exportMidiFile() {

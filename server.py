@@ -484,6 +484,17 @@ class ProducerRequestHandler(SimpleHTTPRequestHandler):
                 "launched_fl_studio": launched
             })
 
+        elif path == "/api/fl_studio/open_file":
+            fpath = payload.get("path")
+            if fpath and os.path.exists(fpath) and hasattr(os, "startfile"):
+                try:
+                    os.startfile(fpath)
+                    self._send_json({"status": "success", "message": f"Arquivo aberto no FL Studio: {os.path.basename(fpath)}"})
+                except Exception as e:
+                    self._send_json({"status": "error", "message": f"Erro ao abrir arquivo: {str(e)}"}, 500)
+            else:
+                self._send_json({"status": "error", "message": "Caminho inválido ou sistema não suportado"}, 400)
+
         elif path == "/api/fl_studio/stop_production":
             bridge.status.is_playing = False
             bridge.send_command("transport_stop")
