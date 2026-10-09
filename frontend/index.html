@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autonomous Music Producer — IA Musical & FL Studio</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">AMP</div>
+        <div class="brand-text">
+          <h2>Autonomous Producer</h2>
+          <span>IA Musical & FL Studio</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="dashboard">Painel Principal</button>
+        <button class="nav-item" data-tab="library">Biblioteca Musical</button>
+        <button class="nav-item" data-tab="training">Treinamento da IA</button>
+        <button class="nav-item" data-tab="composer">Compositor Musical</button>
+        <button class="nav-item" data-tab="arranger">Arranjador</button>
+        <button class="nav-item" data-tab="fl_studio">Conexão FL Studio</button>
+        <button class="nav-item" data-tab="memory">Modelos e Memória</button>
+        <button class="nav-item" data-tab="history">Histórico de Ações</button>
+        <button class="nav-item" data-tab="settings">Configurações</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <label>Modo de Operação</label>
+        <select id="autonomousModeSelect">
+          <option value="supervised">Supervisionado (Recomendado)</option>
+          <option value="assisted">Assistido</option>
+          <option value="analysis">Somente Análise</option>
+        </select>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-viewport">
+      <!-- Top Transport Bar -->
+      <header class="topbar">
+        <div class="session-info">
+          <span>Sessão:</span>
+          <strong id="sessionProjectName">Projeto_Autonomo_1.flp</strong>
+          <span>·</span>
+          <span id="sessionBpm" class="highlight">124 BPM</span>
+          <span>·</span>
+          <span id="sessionKey" class="key-highlight">Lá Menor (A min)</span>
+        </div>
+
+        <div class="transport-controls">
+          <button id="btnPlay" class="btn btn-primary">Reproduzir</button>
+          <button id="btnStop" class="btn btn-secondary">Parar</button>
+          <span class="position-counter" id="positionCounter">Comp. 1 : 1</span>
+        </div>
+
+        <div class="header-actions">
+          <div class="bridge-status">
+            <span>FL Studio Bridge:</span>
+            <span id="bridgeIndicator" class="status-online">Ativo (9050)</span>
+          </div>
+          <button id="btnEmergencyStop" class="btn btn-danger" title="Desativar Auto Producer (Atalho: ESC)">
+            DESATIVAR AUTO PRODUCER <kbd style="background: rgba(0,0,0,0.4); padding: 2px 5px; border-radius: 3px; font-family: monospace; font-size: 10px; margin-left: 6px;">ESC</kbd>
+          </button>
+        </div>
+      </header>
+
+      <!-- Views Container -->
+      <main class="content-view" id="contentView">
+        <!-- Rendered dynamically by app.js -->
+      </main>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
