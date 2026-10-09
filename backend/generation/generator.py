@@ -7,6 +7,7 @@ import random
 import time
 from typing import List, Dict, Any, Optional
 from backend.midi.parser import MidiParser, MidiSong, MidiTrack, MidiNote
+from backend.flp.parser import FlpParser
 from backend.music_theory.analyzer import PITCH_NAMES, HarmonicAnalyzer, CHORD_TEMPLATES
 from backend.storage.db import get_db_connection, log_action
 
@@ -220,6 +221,16 @@ class MusicGenerator:
         midi_path = os.path.join(GENERATED_DIR, filename)
         MidiParser.write_file(song, midi_path)
 
+        # Also write native FL Studio project file (.flp)
+        flp_filename = filename.replace(".mid", ".flp")
+        flp_path = os.path.join(GENERATED_DIR, flp_filename)
+        FlpParser.write_flp_file(
+            filepath=flp_path,
+            title=title,
+            bpm=bpm,
+            channel_names=[t.name for t in song.tracks]
+        )
+
         # Record in DB
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -241,12 +252,14 @@ class MusicGenerator:
         conn.close()
 
         elapsed_ms = int((time.time() - start_time) * 1000)
-        log_action("Geração de Música Completa", f"Gerado {title} ({bars} compassos, {bpm} BPM)", "IA", f"Salvo em {filename}", "success", elapsed_ms)
+        log_action("Geração de Música Completa", f"Gerado {title} ({bars} compassos, {bpm} BPM)", "IA", f"Salvo em {filename} e {flp_filename}", "success", elapsed_ms)
 
         return {
             "title": title,
             "filename": filename,
             "midi_path": midi_path,
+            "flp_filename": flp_filename,
+            "flp_path": flp_path,
             "bpm": bpm,
             "key": f"{root_key} {scale.capitalize()}",
             "bars": bars,

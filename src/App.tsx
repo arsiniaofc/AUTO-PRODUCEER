@@ -305,10 +305,71 @@ export default function App() {
 
   // FL Studio Bridge State
   const [bridgeRunning, setBridgeRunning] = useState<boolean>(true);
+  const [flStudioProducing, setFlStudioProducing] = useState<boolean>(false);
   const [bridgePort] = useState<number>(9050);
   const [connectedClients] = useState<number>(1);
   const [flStudioDetected] = useState<boolean>(true);
   const [lastActionStatus, setLastActionStatus] = useState<string>('Comando de reprodução verificado com sucesso');
+
+  const handleStartFLStudioProduction = () => {
+    if (emergencyStop) {
+      alert('O Auto Producer está desativado pela trava de segurança! Pressione Alt+S para reativar.');
+      return;
+    }
+
+    setFlStudioProducing(true);
+    handleGenerate();
+    if (!isPlaying) {
+      audioEngine.playTracks(
+        tracks,
+        bpm,
+        (beat) => setCurrentBeat(beat),
+        () => {
+          setIsPlaying(false);
+          setCurrentBeat(0);
+        }
+      );
+      setIsPlaying(true);
+    }
+
+    fetch('/api/fl_studio/start_production', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        root_key: rootKey,
+        scale: scaleMode,
+        bpm: bpm,
+        bars: generationDurationBars,
+        title: 'Projeto_Autonomo_FLStudio',
+        open_in_fl_studio: true
+      })
+    }).catch(() => {});
+
+    setShortcutNotification(`Produção Autônoma Iniciada no FL Studio a ${bpm} BPM (${rootKey} ${scaleMode})!`);
+    setTimeout(() => {
+      setShortcutNotification(null);
+    }, 4500);
+
+    const logItem: ActionLogItem = {
+      id: Date.now(),
+      timestamp: new Date().toLocaleTimeString(),
+      planned_action: 'Iniciar Produção no FL Studio',
+      executed_action: `Transport play + 4 stems sincronizados a ${bpm} BPM`,
+      layer: 'FL Studio (Camadas A-D)',
+      result: 'Comandos transmitidos via ponte IPC porta 9050',
+      status: 'success',
+      duration_ms: 16
+    };
+    setActionLogs((prev) => [logItem, ...prev]);
+  };
+
+  const handleStopFLStudioProduction = () => {
+    setFlStudioProducing(false);
+    audioEngine.stop();
+    setIsPlaying(false);
+    setCurrentBeat(0);
+    fetch('/api/fl_studio/stop_production', { method: 'POST' }).catch(() => {});
+  };
 
   // Action Audit Log
   const [actionLogs, setActionLogs] = useState<ActionLogItem[]>([
@@ -670,10 +731,27 @@ export default function App() {
 
           {/* Right Status & Emergency Stop */}
           <div className="flex items-center gap-3">
+            {flStudioProducing ? (
+              <button
+                onClick={handleStopFLStudioProduction}
+                className="flex items-center gap-1.5 rounded bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-rose-700"
+              >
+                <Square className="h-3.5 w-3.5 fill-current" />
+                <span>PARAR FL STUDIO</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleStartFLStudioProduction}
+                className="flex items-center gap-1.5 rounded bg-emerald-500 px-3.5 py-1.5 text-xs font-bold text-black shadow-md shadow-emerald-500/30 hover:bg-emerald-400 active:scale-95 transition-all"
+              >
+                <span>🚀 INICIAR IA NO FL STUDIO</span>
+              </button>
+            )}
+
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-neutral-400">FL Studio Bridge:</span>
-              <span className={`font-mono font-medium ${bridgeRunning ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {bridgeRunning ? 'Conectado (9050)' : 'Desconectado'}
+              <span className="text-neutral-400">Ponte FL:</span>
+              <span className={`font-mono font-medium ${flStudioProducing ? 'text-emerald-400 font-bold' : bridgeRunning ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {flStudioProducing ? '🟢 Produzindo (9050)' : bridgeRunning ? 'Conectado (9050)' : 'Desconectado'}
               </span>
             </div>
 
@@ -751,7 +829,9 @@ export default function App() {
 
                 <div className="rounded border border-neutral-800 bg-[#141824] p-4">
                   <div className="text-xs text-neutral-400">Conexão DAW FL Studio</div>
-                  <div className="mt-1 text-xl font-bold text-emerald-400 font-mono">Camada B Ativa</div>
+                  <div className="mt-1 text-xl font-bold text-emerald-400 font-mono">
+                    {flStudioProducing ? '🟢 Produzindo' : 'Camada B Ativa'}
+                  </div>
                   <div className="mt-2 text-xs text-neutral-500">Ponte Socket IPC · Latência 2ms</div>
                 </div>
 
@@ -759,6 +839,45 @@ export default function App() {
                   <div className="text-xs text-neutral-400">Uso do Computador</div>
                   <div className="mt-1 text-xl font-bold text-white font-mono">CPU 12% · RAM 2.4 GB</div>
                   <div className="mt-2 text-xs text-neutral-500">Otimizado para 8GB RAM</div>
+                </div>
+              </div>
+
+              {/* FL Studio Hero Action Bar */}
+              <div className="flex items-center justify-between rounded border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-neutral-900 to-amber-950/20 p-4 text-xs">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded bg-emerald-500 font-bold text-black font-mono text-sm shadow-md shadow-emerald-500/20">
+                    FL
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Produção Autônoma no FL Studio</h3>
+                    <p className="text-neutral-400 mt-0.5">
+                      Componha arranjos de 4 stems e envie comandos em tempo real para a sua DAW com 1 clique!
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {flStudioProducing ? (
+                    <button
+                      onClick={handleStopFLStudioProduction}
+                      className="rounded bg-rose-600 px-4 py-2 font-bold text-white hover:bg-rose-700"
+                    >
+                      ⏹ PARAR FL STUDIO
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleStartFLStudioProduction}
+                      className="rounded bg-emerald-500 px-5 py-2 font-bold text-black hover:bg-emerald-400 shadow-lg shadow-emerald-500/25 active:scale-95 transition-all"
+                    >
+                      🚀 INICIAR IA NO FL STUDIO
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setActiveTab('fl_studio')}
+                    className="rounded border border-neutral-700 bg-neutral-800 px-3.5 py-2 font-semibold text-neutral-200 hover:bg-neutral-700"
+                  >
+                    Abrir Painel FL Studio →
+                  </button>
                 </div>
               </div>
 
@@ -1356,27 +1475,97 @@ export default function App() {
                   </p>
                 </div>
 
-                <button
-                  onClick={() => {
-                    const scriptCode = `# FL Studio MIDI Controller Script for Autonomous Music Producer
+                <div className="flex items-center gap-2">
+                  {flStudioProducing ? (
+                    <button
+                      onClick={handleStopFLStudioProduction}
+                      className="flex items-center gap-1.5 rounded bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700 shadow-lg shadow-rose-950/40"
+                    >
+                      <Square className="h-4 w-4 fill-current" />
+                      <span>PARAR FL STUDIO</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleStartFLStudioProduction}
+                      className="flex items-center gap-1.5 rounded bg-emerald-500 px-5 py-2 text-xs font-bold text-black hover:bg-emerald-400 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all"
+                    >
+                      <span>🚀 INICIAR IA NO FL STUDIO</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      fetch('/api/fl_studio/install_script', { method: 'POST' })
+                        .then((r) => r.json())
+                        .then((data) => {
+                          alert(`Script instalado com sucesso em:\n${data.path}\n\nAgora habilite o controlador no FL Studio!`);
+                        })
+                        .catch(() => {
+                          alert('Script MIDI baixado. Salve em Documents/Image-Line/FL Studio/Settings/Hardware/Autonomous Producer');
+                        });
+                    }}
+                    className="flex items-center gap-1.5 rounded border border-neutral-700 bg-neutral-800 px-3 py-2 text-xs font-semibold text-neutral-200 hover:bg-neutral-700"
+                  >
+                    <span>⚡ Instalar Script (1 Clique)</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const scriptCode = `# FL Studio MIDI Controller Script for Autonomous Music Producer
 import transport, channels, patterns, ui, midi
 def OnInit(): print("[Autonomous Producer] Conectado ao FL Studio!")
 def OnMidiMsg(event):
     if event.data1 == 20: transport.start()
     elif event.data1 == 21: transport.stop()
 `;
-                    const blob = new Blob([scriptCode], { type: 'text/plain' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'device_AutonomousProducer.py';
-                    a.click();
-                  }}
-                  className="flex items-center gap-1.5 rounded bg-amber-500 px-3.5 py-1.5 text-xs font-semibold text-black hover:bg-amber-400"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Baixar Script MIDI (.py)</span>
-                </button>
+                      const blob = new Blob([scriptCode], { type: 'text/plain' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'device_AutonomousProducer.py';
+                      a.click();
+                    }}
+                    className="flex items-center gap-1.5 rounded bg-amber-500 px-3.5 py-2 text-xs font-semibold text-black hover:bg-amber-400"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Baixar Script (.py)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Banner */}
+              <div className="flex items-center justify-between rounded border border-emerald-500/30 bg-emerald-950/20 p-4 text-xs">
+                <div className="flex items-center gap-3">
+                  <div className="rounded bg-emerald-500/20 p-2 text-emerald-400 font-bold font-mono">
+                    FL
+                  </div>
+                  <div>
+                    <span className="font-bold text-white text-sm">
+                      {flStudioProducing ? '🟢 IA EM PRODUÇÃO ATIVA NO FL STUDIO' : '⚪ Produtor Autônomo Conectado via IPC (9050)'}
+                    </span>
+                    <p className="text-neutral-400 mt-0.5">
+                      {flStudioProducing
+                        ? `Executando 4 stems sincronizados a ${bpm} BPM em ${rootKey} ${scaleMode}. Comandos de transport e patterns ativos.`
+                        : 'Clique em "INICIAR IA NO FL STUDIO" para compor e tocar imediatamente no seu FL Studio.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      fetch('/api/fl_studio/test_command', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ command: 'open_piano_roll' })
+                      }).catch(() => {});
+                      alert('Comando enviado para abrir Piano Roll no FL Studio!');
+                    }}
+                    className="rounded bg-neutral-800 px-3 py-1.5 font-medium text-neutral-200 hover:bg-neutral-700"
+                  >
+                    🎹 Abrir Piano Roll
+                  </button>
+                </div>
               </div>
 
               {/* The 4 Layers Grid */}

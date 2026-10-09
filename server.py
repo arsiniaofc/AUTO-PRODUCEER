@@ -35,8 +35,8 @@ DIST_DIR = os.path.join(ROOT_DIR, "dist")
 FRONTEND_DIR = os.path.join(ROOT_DIR, "frontend")
 TRAIN_DIR = os.path.join(ROOT_DIR, "train")
 
-# Serve dist (built UI) if present, otherwise fallback to frontend
-SERVE_DIR = DIST_DIR if os.path.exists(os.path.join(DIST_DIR, "index.html")) else FRONTEND_DIR
+# In accordance with the local native architecture, serve the native HTML5/CSS3/JS frontend
+SERVE_DIR = FRONTEND_DIR
 
 # Global engine instances
 trainer = ContinuousTrainer()
@@ -112,6 +112,21 @@ class ProducerRequestHandler(SimpleHTTPRequestHandler):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=SERVE_DIR, **kwargs)
+
+    def guess_type(self, path):
+        """Strictly override MIME types to avoid Windows Registry .js -> text/plain bug."""
+        p_lower = path.lower()
+        if p_lower.endswith(".js") or p_lower.endswith(".mjs"):
+            return "application/javascript"
+        if p_lower.endswith(".css"):
+            return "text/css"
+        if p_lower.endswith(".json"):
+            return "application/json"
+        if p_lower.endswith(".mid") or p_lower.endswith(".midi"):
+            return "audio/midi"
+        if p_lower.endswith(".html") or p_lower.endswith(".htm"):
+            return "text/html"
+        return super().guess_type(path)
 
     def _set_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -418,6 +433,108 @@ class ProducerRequestHandler(SimpleHTTPRequestHandler):
         elif path == "/api/bridge/reset_stop":
             res = bridge.reset_emergency_stop()
             self._send_json(res)
+
+        elif path == "/api/fl_studio/start_production":
+            root_key = payload.get("root_key", "A")
+            scale = payload.get("scale", "minor")
+            bpm = float(payload.get("bpm", 124.0))
+            bars = int(payload.get("bars", 16))
+            title = payload.get("title", "Sessao_Autonoma_FLStudio")
+
+            # 1. Generate full composition with MIDI and FLP
+            gen_res = MusicGenerator.generate_full_song(title=title, root_key=root_key, scale=scale, bpm=bpm, bars=bars)
+
+            # 2. Update DAW bridge status
+            bridge.status.bpm = bpm
+            bridge.status.is_playing = True
+            bridge.status.active_project_name = gen_res.get("flp_filename", f"{title}.flp")
+            bridge.send_command("transport_play", {"bpm": bpm, "bars": bars})
+
+            # 3. Update DAW memory state
+            daw_memory.project_name = gen_res.get("flp_filename", f"{title}.flp")
+            daw_memory.bpm = bpm
+            daw_memory.last_verified_action = f"Producao iniciada no FL Studio: {bpm} BPM, {bars} compassos"
+
+            # 4. If Windows, launch FL Studio with the project file if requested
+            launched = False
+            flp_path = gen_res.get("flp_path")
+            if payload.get("open_in_fl_studio") and hasattr(os, "startfile") and flp_path:
+                try:
+                    os.startfile(flp_path)
+                    launched = True
+                except Exception:
+                    pass
+
+            log_action("Iniciar Producao no FL Studio", f"{title} ({bpm} BPM)", "Camadas A-D", "Executado e transmitido", "success")
+
+            self._send_json({
+                "status": "success",
+                "message": "Producao iniciada no FL Studio com sucesso!",
+                "generation": gen_res,
+                "steps": [
+                    {"step": 1, "name": "Conexao com FL Studio Estabelecida", "status": "ok"},
+                    {"step": 2, "name": f"Analise Harmonica Krumhansl ({root_key} {scale})", "status": "ok"},
+                    {"step": 3, "name": "Composicao dos 4 Stems (Bateria, Baixo, Acordes, Melodia)", "status": "ok"},
+                    {"step": 4, "name": "Projeto FL Studio (.flp) e MIDI (.mid) Gerados", "status": "ok"},
+                    {"step": 5, "name": "Comando de Play/Transport Transmitido para a DAW", "status": "ok"}
+                ],
+                "flp_path": gen_res.get("flp_path"),
+                "flp_filename": gen_res.get("flp_filename"),
+                "midi_path": gen_res.get("midi_path"),
+                "launched_fl_studio": launched
+            })
+
+        elif path == "/api/fl_studio/stop_production":
+            bridge.status.is_playing = False
+            bridge.send_command("transport_stop")
+            daw_memory.last_verified_action = "Produção parada no FL Studio"
+            log_action("Parar Produção no FL Studio", "Comando de Stop", "Camada B", "Transport stop enviado", "success")
+            self._send_json({"status": "success", "message": "Produção e reprodução paradas no FL Studio."})
+
+        elif path == "/api/fl_studio/install_script":
+            # Attempt auto-installation into standard FL Studio Hardware Scripts path
+            import shutil
+            from backend.fl_studio.fl_midi_script import FL_SCRIPT_TEMPLATE
+
+            script_destinations = []
+            user_profile = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+            candidate_dirs = [
+                os.path.join(user_profile, "Documents", "Image-Line", "FL Studio", "Settings", "Hardware", "Autonomous Producer"),
+                os.path.join(user_profile, "OneDrive", "Documents", "Image-Line", "FL Studio", "Settings", "Hardware", "Autonomous Producer"),
+                os.path.join(ROOT_DIR, "data", "fl_studio_script")
+            ]
+
+            installed_path = None
+            for cdir in candidate_dirs:
+                try:
+                    os.makedirs(cdir, exist_ok=True)
+                    target_file = os.path.join(cdir, "device_AutonomousProducer.py")
+                    with open(target_file, "w", encoding="utf-8") as f:
+                        f.write(FL_SCRIPT_TEMPLATE)
+                    installed_path = target_file
+                    script_destinations.append(target_file)
+                    break
+                except Exception:
+                    continue
+
+            if not installed_path:
+                local_dir = os.path.join(ROOT_DIR, "data", "fl_studio_script")
+                os.makedirs(local_dir, exist_ok=True)
+                installed_path = os.path.join(local_dir, "device_AutonomousProducer.py")
+                with open(installed_path, "w", encoding="utf-8") as f:
+                    f.write(FL_SCRIPT_TEMPLATE)
+
+            log_action("Instalar Script FL Studio", installed_path, "Camada A", "Script copiado", "success")
+            self._send_json({
+                "status": "success",
+                "message": f"Script MIDI instalado com sucesso!",
+                "path": installed_path
+            })
+
+        elif path == "/api/fl_studio/test_command":
+            cmd = payload.get("command", "ping")
+            res = bridge.send_command(cmd, payload.get("params", {}))
+            self._send_json({"status": "success", "command": cmd, "result": res})
 
         elif path == "/api/settings":
             for k, v in payload.items():

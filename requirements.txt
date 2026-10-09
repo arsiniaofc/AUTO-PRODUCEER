@@ -1,22 +1,9 @@
-# Autonomous Music Producer - Dependências Python
-# Para instalar no Windows/Linux:
-# pip install -r requirements.txt
-
-# Processamento de Áudio e MIDI
+# Autonomous Music Producer - Dependencias Python
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.1.0
 mido>=1.3.0
 pretty_midi>=0.2.10
-
-# Processamento de Projetos FL Studio (.flp)
 pyflp>=0.1.1
-
-# IA e Deep Learning Local (CPU / AMD Ryzen)
-torch>=2.1.0 --index-url https://download.pytorch.org/whl/cpu
-
-# Servidor Web Leve e APIs (Opcional se desejar FastAPI além do servidor nativo)
-fastapi>=0.110.0
-uvicorn>=0.28.0
-
-# Automação de Interface e Diagnóstico do Sistema
 psutil>=5.9.8
 Pillow>=10.2.0
 pyautogui>=0.9.54

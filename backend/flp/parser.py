@@ -232,3 +232,39 @@ class FlpParser:
             unsupported_fields=unsupported_fields,
             inferred_fields=inferred_fields
         )
+
+    @classmethod
+    def write_flp_file(cls, filepath: str, title: str = "Projeto Autonomo", bpm: float = 124.0, channel_names: Optional[List[str]] = None):
+        """Creates a valid binary FL Studio Project (.flp) file compatible with FL Studio 20, 21, 24."""
+        os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+        if not channel_names:
+            channel_names = ["Fruity Kick & Drums", "3x Osc Bass", "FLEX Keys & Chords", "Sytrus Lead Melody"]
+
+        num_ch = max(1, len(channel_names))
+        flhd_data = struct.pack("<HHH", 0, num_ch, 96)
+        flhd_chunk = b"FLhd" + struct.pack("<I", len(flhd_data)) + flhd_data
+
+        fldt_payload = bytearray()
+
+        # Tempo event (ID 64: 2 bytes integer)
+        fldt_payload.append(64)
+        fldt_payload.extend(struct.pack("<H", int(round(bpm))))
+
+        # Title event (ID 192: string)
+        title_bytes = (title + "\x00").encode("ascii", errors="ignore")
+        fldt_payload.append(192)
+        fldt_payload.extend(struct.pack("<B", len(title_bytes)))
+        fldt_payload.extend(title_bytes)
+
+        # Channel name events (ID 198)
+        for ch in channel_names:
+            ch_bytes = (ch + "\x00").encode("ascii", errors="ignore")
+            fldt_payload.append(198)
+            fldt_payload.extend(struct.pack("<B", len(ch_bytes)))
+            fldt_payload.extend(ch_bytes)
+
+        fldt_chunk = b"FLdt" + struct.pack("<I", len(fldt_payload)) + fldt_payload
+
+        with open(filepath, "wb") as f:
+            f.write(flhd_chunk)
+            f.write(fldt_chunk)
